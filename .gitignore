@@ -1,0 +1,14 @@
+# 默认全忽略，白名单放行
+/*
+!/.gitignore
+!/README.md
+!/install.sh
+!/agent/
+!/tiers/
+/agent/*
+!/agent/config.yml
+!/agent/models.yml
+!/agent/keybindings.yml
+!/agent/APPEND_SYSTEM.md
+!/agent/.env.example
+!/agent/extensions/
