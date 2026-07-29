@@ -4,4 +4,5 @@
 
 alias omp-kimi='omp --config ~/.omp/tiers/config-kimi.yml'
 alias omp-glm='omp --config ~/.omp/tiers/config-glm.yml'
+alias omp-klite='omp --config ~/.omp/tiers/config-kimi-256.yml'
 alias omp-ask='omp --model @smol'
