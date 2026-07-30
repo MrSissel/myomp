@@ -7,3 +7,8 @@
 - Explicit requests to parallelize, split work, or have multiple agents analyze MUST use `task`.
 - Do not avoid delegation merely because the main assistant could perform the search directly; delegate when specialist context, broad exploration, or independent evidence materially improves coverage.
 - Do not invent agent slices. Keep small, deterministic, known-location work on direct tools.
+
+# OMP harness questions
+
+- When a question concerns omp itself (configuration, agents, MCP, skills, extensions, tools, keybindings), ALWAYS consult the bundled docs first: `read omp://` lists all available docs; read the relevant `omp://<doc>` before answering.
+- NEVER answer omp questions from memory or from other harnesses' conventions (Claude Code, Cursor, etc.) — verify against the omp docs.
