@@ -11,5 +11,6 @@
 !/agent/keybindings.yml
 !/agent/APPEND_SYSTEM.md
 !/agent/.env.example
+!/agent/mcp.json
 !/agent/extensions/
 !/agent/agents/
