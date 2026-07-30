@@ -23,11 +23,15 @@ retry:
       - cch_anthropic/k3
       - cch_anthropic/MiniMax-M3
 disabledExtensions: 
-  []
+  - skill:defuddle
+  - skill:json-canvas
+  - skill:obsidian-bases
+  - skill:obsidian-cli
+  - skill:obsidian-markdown
 disabledProviders: 
-  - agents
   - codex
   - gemini
   - opencode
+  - agents
 steeringMode: one-at-a-time
 interruptMode: immediate
