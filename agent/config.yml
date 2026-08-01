@@ -5,11 +5,11 @@ modelRoles:
   plan: cch_anthropic/k3
   commit: cch_anthropic/deepseek-v4-flash
   task: cch_anthropic/glm-5.2
-  default: cch_anthropic/k3
+  default: cch_anthropic/glm-5.2
 defaultThinkingLevel: auto
 providers: 
   {}
-symbolPreset: unicode
+symbolPreset: nerd
 theme: 
   dark: titanium
   light: light
@@ -35,3 +35,4 @@ disabledProviders:
   - agents
 steeringMode: one-at-a-time
 interruptMode: immediate
+hideThinkingBlock: true
