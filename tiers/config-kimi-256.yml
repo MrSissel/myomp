@@ -1,3 +1,3 @@
 # Kimi K3 256K tier overlay — 小上下文档，与全局 config.yml 深合并，仅覆盖 default 模型角色
 modelRoles:
-  default: cch_anthropic/k3-256k
+  default: cch_openai/k3-256k

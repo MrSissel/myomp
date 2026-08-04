@@ -75,3 +75,34 @@ providers:
         maxTokens: 384000
         compat:
           requiresReasoningContentForToolCalls: true
+  cch_openai:
+    baseUrl: http://localhost:23000/v1
+    api: openai-completions
+    apiKey: CCH_API_KEY
+    authHeader: true
+    disableStrictTools: true
+    models:
+      - id: k3
+        name: k3
+        reasoning: true
+        thinking:
+          mode: budget
+          efforts: [low, high, max]
+          defaultLevel: max
+        input: [text, image]
+        contextWindow: 1048576
+        maxTokens: 1048576
+        compat:
+          requiresReasoningContentForToolCalls: true
+      - id: k3-256k
+        name: k3-256k
+        reasoning: true
+        thinking:
+          mode: budget
+          efforts: [low, high, max]
+          defaultLevel: max
+        input: [text, image]
+        contextWindow: 262144
+        maxTokens: 262144
+        compat:
+          requiresReasoningContentForToolCalls: true
