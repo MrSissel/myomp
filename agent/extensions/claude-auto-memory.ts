@@ -6,10 +6,10 @@
 //   - Capped at 200 lines or 25KB, whichever comes first
 //   - Includes write guidance so the agent can update MEMORY.md via edit/write tools
 //
-// Uses before_provider_request (not before_agent_start) because OMP's
-// internal tool-signature rebuild can overwrite systemPrompt changes made
-// in before_agent_start. before_provider_request fires at the wire boundary,
-// so the injection survives.
+// Uses before_agent_start (not before_provider_request): OMP's extensions
+// runner consumes the systemPrompt return value and applies it via
+// agent.setSystemPrompt, which persists through the entire agent loop.
+// No subsequent rebuild overwrites it (verified in omp source).
 
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -26,17 +26,14 @@ interface ExtensionContext {
 	cwd: string;
 }
 
-interface ProviderPayload {
-	system?: unknown;
-	messages?: unknown[];
-	[key: string]: unknown;
-}
-
 interface ExtensionApi {
 	setLabel(label: string): void;
 	on(
-		event: "before_provider_request",
-		handler: (event: { type: "before_provider_request"; payload: unknown }, ctx: ExtensionContext) => Promise<unknown | void>,
+		event: "before_agent_start",
+		handler: (
+			event: { type: "before_agent_start"; systemPrompt: string[] },
+			ctx: ExtensionContext,
+		) => Promise<{ systemPrompt?: string[] } | void>,
 	): void;
 }
 
@@ -241,37 +238,10 @@ function buildReminderBlock(lineCount: number, byteCount: number): string {
 	].join("\n");
 }
 
-/**
- * Inject the memory block into the provider payload's system field.
- * Handles Anthropic-style (system as string or array of {type,text}) and
- * OpenAI-style (system role in messages array).
- */
-function injectIntoPayload(payload: ProviderPayload, block: string): ProviderPayload {
-	const cloned: ProviderPayload = { ...payload };
-
-	if (Array.isArray(cloned.system)) {
-		cloned.system = [...(cloned.system as unknown[]), { type: "text", text: block }];
-	} else if (typeof cloned.system === "string") {
-		cloned.system = cloned.system + "\n\n" + block;
-	} else if (Array.isArray(cloned.messages)) {
-		const msgs = [...cloned.messages] as Array<Record<string, unknown>>;
-		const sysEntry = { role: "system", content: block };
-		const firstSysIdx = msgs.findIndex(m => m.role === "system");
-		if (firstSysIdx >= 0) {
-			msgs.splice(firstSysIdx + 1, 0, sysEntry);
-		} else {
-			msgs.unshift(sysEntry);
-		}
-		cloned.messages = msgs;
-	}
-
-	return cloned;
-}
-
 export default function claudeAutoMemory(pi: ExtensionApi): void {
 	pi.setLabel("Claude Auto Memory Bridge");
 
-	pi.on("before_provider_request", async (event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		const content = await getMemoryContent(ctx.cwd);
 		if (!content || !cachedPath) return;
 
@@ -284,7 +254,6 @@ export default function claudeAutoMemory(pi: ExtensionApi): void {
 		} catch {
 			// The file may disappear after loading; keep the memory injection without a size warning.
 		}
-		const payload = event.payload as ProviderPayload;
-		return injectIntoPayload(payload, block);
+		return { systemPrompt: [...event.systemPrompt, block] };
 	});
 }

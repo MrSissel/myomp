@@ -6,13 +6,12 @@
 // targets the upstream pi CLI's extension host, not OMP's. OMP auto-loads any
 // @orca-managed-pi-extension-marked .ts file from ~/.omp/agent/extensions/.
 //
-// Why before_provider_request (not before_agent_start): per
-// claude-auto-memory.ts, "OMP's internal tool-signature rebuild can overwrite
-// systemPrompt changes made in before_agent_start. before_provider_request
-// fires at the wire boundary, so the injection survives." The Claude Code
-// pi-extension uses before_agent_start because upstream pi has no
-// before_provider_request hook; OMP exposes both, and the latter is the only
-// one whose return value actually reaches the model.
+// Why before_agent_start (not before_provider_request): OMP's extensions
+// runner consumes the systemPrompt return value and applies it via
+// agent.setSystemPrompt, which persists through the entire agent loop.
+// No subsequent rebuild overwrites it (verified in omp source). The Claude
+// Code pi-extension uses before_agent_start too — upstream pi has no
+// before_provider_request hook, but OMP exposes both.
 //
 // Why reuse hooks/: the instruction text and config resolution are versioned
 // alongside the skill bodies. Vendoring them by re-requiring keeps the OMP
@@ -64,45 +63,6 @@ interface PiContext {
   ui?: PiUI
   sessionManager?: PiSessionManager
   isIdle?: () => boolean
-}
-
-interface ProviderSystemBlock {
-  type: string
-  text?: string
-}
-
-interface PiProviderPayload {
-  instructions?: string
-  system?: string | ProviderSystemBlock[]
-  messages?: Array<Record<string, unknown>>
-  [key: string]: unknown
-}
-
-function injectLadder(payload: PiProviderPayload, block: string): PiProviderPayload {
-  const cloned: PiProviderPayload = { ...payload }
-
-  // ponytail: omp's default provider (OpenAI Responses API) puts the system
-  // prompt in `instructions`, not `system` or `messages`. Handle the three
-  // shapes so the injection works regardless of the active provider.
-  if (typeof cloned.instructions === 'string') {
-    cloned.instructions = `${cloned.instructions}\n\n${block}`
-  } else if (Array.isArray(cloned.system)) {
-    cloned.system = [...cloned.system, { type: 'text', text: block }]
-  } else if (typeof cloned.system === 'string') {
-    cloned.system = `${cloned.system}\n\n${block}`
-  } else if (Array.isArray(cloned.messages)) {
-    const msgs = [...cloned.messages] as Array<Record<string, unknown>>
-    const sysEntry = { role: 'system', content: block }
-    const firstSysIdx = msgs.findIndex((m) => m.role === 'system')
-    if (firstSysIdx >= 0) {
-      msgs.splice(firstSysIdx + 1, 0, sysEntry)
-    } else {
-      msgs.unshift(sysEntry)
-    }
-    cloned.messages = msgs
-  }
-
-  return cloned
 }
 
 type CommandParsed =
@@ -226,10 +186,6 @@ function renderStatus(mode: PonytailMode): string {
   if (mode === 'off') return ''
   return `ponytail:${MODE_META[mode].label}`
 }
-interface PiBeforeProviderRequestEvent {
-  type?: 'before_provider_request'
-  payload?: unknown
-}
 
 interface PiCommandDef {
   description: string
@@ -333,12 +289,11 @@ export default function ponytailExtension(pi: PiHost) {
     syncStatus(rawCtx as PiContext | null)
   })
 
-  pi.on('before_provider_request', (rawEvent) => {
-    const event = rawEvent as PiBeforeProviderRequestEvent | undefined
+  pi.on('before_agent_start', (rawEvent: unknown) => {
+    const event = rawEvent as { systemPrompt: string[] } | undefined
     if (!currentMode || currentMode === 'off') return
-    const payload = event?.payload
-    if (!payload || typeof payload !== 'object') return
+    if (!event?.systemPrompt) return
     const block = getPonytailInstructions(currentMode)
-    return injectLadder(payload as PiProviderPayload, block)
+    return { systemPrompt: [...event.systemPrompt, block] }
   })
 }

@@ -6,11 +6,11 @@
 // rule content — files under .claude/rules/ remain editable from either
 // Claude Code or omp sessions.
 //
-// Why before_provider_request (not before_agent_start):
-//   omp's internal tool-signature rebuild overwrites systemPrompt changes
-//   made in before_agent_start. before_provider_request fires at the
-//   wire boundary, so the injection survives. (Same rationale as
-//   claude-auto-memory.ts in this directory.)
+// Why before_agent_start (not before_provider_request):
+//   OMP's extensions runner consumes the systemPrompt return value and
+//   applies it via agent.setSystemPrompt, which persists through the entire
+//   agent loop. No subsequent rebuild overwrites it (verified in omp source).
+//   (Same rationale as claude-auto-memory.ts in this directory.)
 //
 // Frontmatter fields read:
 //   - paths | globs | applyTo  → file-match globs (merged)
@@ -42,12 +42,6 @@ interface Rule {
 	description: string;
 }
 
-interface ProviderPayload {
-	system?: unknown;
-	messages?: unknown[];
-	[key: string]: unknown;
-}
-
 interface ExtensionContext {
 	cwd: string;
 	ui: { notify(msg: string, level: string): void };
@@ -58,7 +52,13 @@ interface ExtensionApi {
 	on(event: "session_start", handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void): void;
 	on(event: "session_switch" | "session_branch" | "session_tree", handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void): void;
 	on(event: "tool_call", handler: (event: { toolName: string; input: unknown }, ctx: ExtensionContext) => void): void;
-	on(event: "before_provider_request", handler: (event: { type: "before_provider_request"; payload: unknown }, ctx: ExtensionContext) => Promise<unknown | void>): void;
+	on(
+		event: "before_agent_start",
+		handler: (
+			event: { type: "before_agent_start"; systemPrompt: string[] },
+			ctx: ExtensionContext,
+		) => Promise<{ systemPrompt?: string[] } | void>,
+	): void;
 	registerCommand(name: string, opts: { description: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> }): void;
 }
 
@@ -208,24 +208,6 @@ function selectRules(): Rule[] {
 	return matched;
 }
 
-/** Inject into payload.system — Anthropic array, OpenAI string, or messages[0]. */
-function injectIntoPayload(payload: ProviderPayload, block: string): ProviderPayload {
-	const cloned: ProviderPayload = { ...payload };
-	if (Array.isArray(cloned.system)) {
-		cloned.system = [...(cloned.system as unknown[]), { type: "text", text: block }];
-	} else if (typeof cloned.system === "string") {
-		cloned.system = cloned.system + "\n\n" + block;
-	} else if (Array.isArray(cloned.messages)) {
-		const msgs = [...cloned.messages] as Array<Record<string, unknown>>;
-		const sysEntry = { role: "system", content: block };
-		const firstSysIdx = msgs.findIndex(m => m.role === "system");
-		if (firstSysIdx >= 0) msgs.splice(firstSysIdx + 1, 0, sysEntry);
-		else msgs.unshift(sysEntry);
-		cloned.messages = msgs;
-	}
-	return cloned;
-}
-
 function buildBlock(matched: Rule[]): string {
 	if (matched.length === 0) return "";
 	const blocks: string[] = [];
@@ -281,13 +263,13 @@ export default function claudeRulesBridge(pi: ExtensionApi): void {
 		}
 	});
 
-	pi.on("before_provider_request", async (event, ctx) => {
+	pi.on("before_agent_start", async (event) => {
 		if (rules.length === 0) return;
 		const matched = selectRules();
 		if (matched.length === 0) return;
 		const block = buildBlock(matched);
 		if (!block) return;
-		return injectIntoPayload(event.payload as ProviderPayload, block);
+		return { systemPrompt: [...event.systemPrompt, block] };
 	});
 
 	pi.registerCommand("claude-rules", {
