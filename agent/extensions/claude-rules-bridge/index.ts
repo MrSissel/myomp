@@ -17,22 +17,29 @@
 //   - alwaysApply              → always inject regardless of cwd/files
 //   - description              → metadata for /claude-rules listing
 //
-// Injection philosophy (omp-native style: hint the model, don't read for it):
+// Injection philosophy (pi-rules style dynamic injection — models don't
+// reliably read xd:// devices on demand; omp itself keeps web_search etc.
+// top-level for exactly this reason, issue #5973):
 //   - alwaysApply rules → full content injected into the system prompt each
 //     agent loop (unconditional rules, like omp's sticky RULES.md).
-//   - Path-scoped rules → exposed as the xd://claude_rules tool device
-//     (registerTool with default discoverable loadMode auto-mounts it).
-//     A short hint block tells the model to list/read rules on demand via
-//     read xd://claude_rules / write xd://claude_rules — same posture as
-//     omp's rulebook listing and <dir-context>, zero content injection.
+//   - Path-scoped rules + subdirectory CLAUDE.md → injected dynamically: on
+//     every read/edit/write tool_result we extract the target file path,
+//     match it against rule globs / directory scopes, and append matching
+//     rule bodies to that tool's result. The rule arrives exactly when the
+//     model touches a matching file — zero model initiative required.
+//     (Same mechanism as the pi-rules extension: tool_result event.)
+//   - The xd://claude_rules device stays as an on-demand index/reader for
+//     anything the auto-match misses.
 //
 // Token cap: 12 KB for the alwaysApply block (aligned with pi-rules).
-// Zero external deps — hand-rolled frontmatter to avoid yaml.
+// Only dependency: picomatch (glob matching, same options as pi-rules).
+// Frontmatter stays hand-rolled to avoid a yaml dependency.
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
+import picomatch from "picomatch";
 
 const MAX_BYTES = 12_000;
 const MAX_RULE_BYTES = 6_000; // ponytail: per-rule ceiling so one giant file can't dominate
@@ -46,12 +53,12 @@ interface Rule {
 	description: string;
 }
 
-interface ExtensionContext {
+export interface ExtensionContext {
 	cwd: string;
 	ui: { notify(msg: string, level: string): void };
 }
 
-interface ExtensionApi {
+export interface ExtensionApi {
 	setLabel(label: string): void;
 	zod: {
 		object: (shape: Record<string, unknown>) => unknown;
@@ -65,6 +72,19 @@ interface ExtensionApi {
 			event: { type: "before_agent_start"; systemPrompt: string[] },
 			ctx: ExtensionContext,
 		) => Promise<{ systemPrompt?: string[] } | void>,
+	): void;
+	on(
+		event: "tool_result",
+		handler: (
+			event: {
+				toolName: string;
+				input: Record<string, unknown>;
+				content: Array<{ type: string; text?: string }>;
+				isError: boolean;
+				details?: unknown;
+			},
+			ctx: ExtensionContext,
+		) => Promise<{ content: Array<{ type: string; text?: string }> } | void>,
 	): void;
 	registerTool(def: {
 		name: string;
@@ -82,16 +102,17 @@ interface ExtensionApi {
 	registerCommand(name: string, opts: { description: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> }): void;
 }
 
-// per-process session state (mirrors claude-auto-memory.ts pattern)
-let rules: Rule[] = [];
+// per-process session state (mirrors claude-auto-memory.ts pattern); exported
+// for tests (vitest, see test/)
+export let rules: Rule[] = [];
 
 /** Subdirectory CLAUDE.md files (not in .claude/rules/), indexed by their directory scope. */
-interface SubClaudeMd {
+export interface SubClaudeMd {
 	name: string; // directory relative to cwd, e.g. "packages/api"
 	filePath: string;
 	body: string;
 }
-let subClaudeMds: SubClaudeMd[] = [];
+export let subClaudeMds: SubClaudeMd[] = [];
 
 const HOME = homedir();
 
@@ -171,7 +192,7 @@ async function scanRulesDir(dir: string, out: Rule[], seen: Set<string>): Promis
 }
 
 /** Walk cwd up to HOME + scan user-home ~/.claude/rules/. */
-async function discoverRules(cwd: string): Promise<Rule[]> {
+export async function discoverRules(cwd: string): Promise<Rule[]> {
 	const out: Rule[] = [];
 	const seen = new Set<string>();
 	let dir = resolve(cwd);
@@ -186,7 +207,7 @@ async function discoverRules(cwd: string): Promise<Rule[]> {
 }
 
 /** Recurse cwd subdirectories (check dirs ≤ 3 levels deep, skipping hidden/build dirs) for CLAUDE.md files. */
-async function scanSubdirClaudeMds(cwd: string, out: SubClaudeMd[], depth = 0): Promise<void> {
+export async function scanSubdirClaudeMds(cwd: string, out: SubClaudeMd[], depth = 0): Promise<void> {
 	if (depth >= 3) return;
 	let entries: string[];
 	try { entries = await readdir(cwd); } catch { return; }
@@ -273,52 +294,202 @@ function buildIndexText(): string {
 	return lines.join("\n");
 }
 
-/** One-line pointer so the model knows path-scoped rules exist and how to read them. */
-function buildHintBlock(): string {
-	const scoped = rules.some(r => !r.alwaysApply && r.globs.length > 0);
-	const sub = subClaudeMds.length > 0;
-	if (!scoped && !sub) return "";
-	const subject = scoped && sub
-		? "Path-scoped rules and subdirectory CLAUDE.md files"
-		: scoped ? "Path-scoped rules" : "Subdirectory CLAUDE.md files";
-	return [
-		"## Project Rules (.claude/rules/)",
-		"",
-		`${subject} are NOT auto-injected. Before editing matching files, read them on demand via the claude_rules device:`,
-		"  read xd://claude_rules               → index (name + scope + file path)",
-		'  write xd://claude_rules {"name": X}  → full content',
-	].join("\n");
+// ───────────────────────────────────────────────────────────────────────────
+// Dynamic injection (pi-rules style): path-scoped rules and subdirectory
+// CLAUDE.md files are appended to the result of any read/edit/write tool
+// call whose target file matches. Rule content arrives exactly when the
+// model touches a matching file — no model initiative required.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Per-session dedupe key: `${ruleFilePath}\0${absTargetPath}`. Reset on reload. */
+export const injectedKeys = new Set<string>();
+
+const TRACKED_TOOLS: Record<string, true> = { read: true, edit: true, write: true };
+
+/** Read-tool selector suffix, e.g. `src/foo.ts:50-200`, `:raw`, `:5-16,960-973`. */
+const READ_SEL_RE = /:(?:\d+(?:-\d+|\+\d+)?(?:,\d+(?:-\d+|\+\d+)?)*|raw|conflicts)$/;
+
+/**
+ * Clean a raw tool-input path: strip BOM, hashline `¶` prefix + `#tag`
+ * (write.ts's own unwrap), and read-tool selectors. Returns undefined for
+ * internal/web URLs. `details.*` paths from the tool itself are already
+ * clean and skip this.
+ */
+function cleanPath(raw: string): string | undefined {
+	let p = raw;
+	if (p.startsWith("\uFEFF")) p = p.slice(1);
+	if (p.startsWith("¶")) p = p.replace(/^¶+/, "");
+	p = p.replace(/#[0-9a-fA-F]{4}$/, "");
+	if (p.includes("://")) return undefined;
+	p = p.replace(READ_SEL_RE, "");
+	return p.length > 0 ? p : undefined;
+}
+
+/** Absolute target paths from a tool_result event (skips internal/web URLs). */
+function extractTargetPaths(
+	event: { toolName: string; input: Record<string, unknown>; details?: unknown },
+	cwd: string,
+): string[] {
+	if (!(event.toolName in TRACKED_TOOLS)) return [];
+	const out: string[] = [];
+	const addClean = (p: unknown): void => {
+		if (typeof p !== "string") return;
+		const clean = cleanPath(p);
+		if (!clean) return;
+		out.push(resolve(cwd, clean));
+	};
+	// Tool-returned details paths are resolved absolute paths — use as-is.
+	const addAbsolute = (p: unknown): void => {
+		if (typeof p === "string" && p.length > 0) out.push(p);
+	};
+	if (event.toolName !== "write") {
+		const d = event.details as { resolvedPath?: unknown; path?: unknown } | undefined;
+		addAbsolute(d?.resolvedPath);
+		addAbsolute(d?.path);
+	}
+	addClean(event.input.path);
+	if (Array.isArray(event.input.paths)) {
+		for (const p of event.input.paths) addClean(p);
+	}
+	return [...new Set(out)];
+}
+
+interface MatchedRule {
+	filePath: string;
+	body: string;
+	kind: "rule" | "subclaude";
+}
+
+/** Rules whose globs / directory scope match the absolute target path. */
+export function matchForPath(absPath: string, cwd: string): MatchedRule[] {
+	const rel = relative(cwd, absPath).split(sep).join("/");
+	const base = basename(absPath);
+	const out: MatchedRule[] = [];
+	for (const r of rules) {
+		if (r.alwaysApply || r.globs.length === 0) continue; // alwaysApply already in the system prompt
+		if (matchesGlobs(r.globs, rel, base)) out.push({ filePath: r.filePath, body: r.body, kind: "rule" });
+	}
+	for (const m of subClaudeMds) {
+		if (absPath === m.name || absPath.startsWith(m.name + sep)) {
+			out.push({ filePath: m.filePath, body: m.body, kind: "subclaude" });
+		}
+	}
+	return out;
+}
+
+/** One appended text block with the matched rules, capped at MAX_BYTES. */
+export function buildDynamicBlock(
+	matched: MatchedRule[],
+	targetRel: string,
+): { block: string; included: MatchedRule[] } | null {
+	const blocks: string[] = [];
+	const included: MatchedRule[] = [];
+	let used = 0;
+	for (const m of matched) {
+		const marker = m.kind === "subclaude" ? "claude-md" : "claude-rules";
+		const piece = `<!-- ${marker}: ${m.filePath} -->\n${m.body}`;
+		if (used + piece.length > MAX_BYTES) break;
+		blocks.push(piece);
+		included.push(m);
+		used += piece.length;
+	}
+	if (blocks.length === 0) return null;
+	return {
+		block: ["## Project Rules (matched for " + targetRel + ")", "", blocks.join("\n\n---\n\n")].join("\n"),
+		included,
+	};
+}
+
+// ── Glob matching (picomatch, same options as pi-rules) ───────────────────
+// Matched against the cwd-relative path and the basename (`**/*.ts` matches
+// `a.ts` at the root; `*.md` applies to md files at any depth).
+
+const GLOB_OPTIONS = { bash: true, dot: true } as const;
+
+export function matchesGlobs(globs: string[], relPath: string, base: string): boolean {
+	let positive = false;
+	for (const g of globs) {
+		const neg = g.startsWith("!");
+		const isMatch = picomatch(neg ? g.slice(1) : g, GLOB_OPTIONS);
+		if (isMatch(relPath) || isMatch(base)) {
+			if (neg) return false;
+			positive = true;
+		}
+	}
+	return positive;
+}
+
+/** Append matched rules to a read/edit/write tool result (deduped per session). */
+export async function handleToolResult(
+	event: {
+		toolName: string;
+		input: Record<string, unknown>;
+		content: Array<{ type: string; text?: string }>;
+		isError: boolean;
+		details?: unknown;
+	},
+	cwd: string,
+): Promise<{ content: Array<{ type: string; text?: string }> } | undefined> {
+	if (event.isError) return undefined;
+	const targets = extractTargetPaths(event, cwd);
+	if (targets.length === 0) return undefined;
+	const matched: MatchedRule[] = [];
+	const keys: string[] = [];
+	const seenRules = new Set<string>(); // one event, one injection per rule file (pi-rules seenRules)
+	for (const t of targets) {
+		for (const m of matchForPath(t, cwd)) {
+			if (seenRules.has(m.filePath)) continue;
+			seenRules.add(m.filePath);
+			const key = `${m.filePath}\0${t}`;
+			if (injectedKeys.has(key)) continue;
+			injectedKeys.add(key);
+			matched.push(m);
+			keys.push(key);
+		}
+	}
+	if (matched.length === 0) return undefined;
+	const built = buildDynamicBlock(matched, relative(cwd, targets[0]));
+	if (!built) {
+		for (const k of keys) injectedKeys.delete(k);
+		return undefined;
+	}
+	return { content: [...event.content, { type: "text", text: built.block }] };
 }
 
 let lastError: string | undefined;
 
 export default function claudeRulesBridge(pi: ExtensionApi): void {
-	const reload = async (cwd: string): Promise<void> => {
+	const reload = async (cwd: string, ui?: ExtensionContext["ui"]): Promise<void> => {
 		try {
 			rules = await discoverRules(cwd);
 			const sub: SubClaudeMd[] = [];
 			await scanSubdirClaudeMds(cwd, sub);
 			subClaudeMds = sub;
+			injectedKeys.clear();
 			lastError = undefined;
+			if (ui && (rules.length > 0 || subClaudeMds.length > 0)) {
+				ui.notify(`[claude-rules] ${rules.length} rules, ${subClaudeMds.length} subdir CLAUDE.md`, "info");
+			}
 		} catch (e) {
 			rules = [];
 			subClaudeMds = [];
 			lastError = (e as Error).message ?? String(e);
+			ui?.notify(`[claude-rules] load failed: ${lastError}`, "error");
 		}
 	};
 
-	pi.on("session_start", async (_e, ctx) => { await reload(ctx.cwd); });
+	pi.on("session_start", async (_e, ctx) => { await reload(ctx.cwd, ctx.ui); });
 	for (const evt of ["session_switch", "session_branch", "session_tree", "session_compact"] as const) {
-		pi.on(evt, async (_e, ctx) => { await reload(ctx.cwd); });
+		pi.on(evt, async (_e, ctx) => { await reload(ctx.cwd, ctx.ui); });
 	}
 
 	pi.registerTool({
 		name: "claude_rules",
 		label: "Claude Rules",
 		description:
-			"List path-scoped .claude/rules rules and subdirectory CLAUDE.md files (no args) " +
-			"or read one entry's full content (args: name). Use before editing files that may " +
-			"match a rule's globs or fall under a subdirectory CLAUDE.md.",
+			"List path-scoped .claude/rules rules and subdirectory CLAUDE.md files (no args), " +
+			"or read one rule's full content (args: name). Matching rules are auto-injected " +
+			"into read/edit/write tool results.",
 		parameters: pi.zod.object({ name: pi.zod.string().optional() }),
 		async execute(_toolCallId, params) {
 			const name = params?.name?.trim();
@@ -340,22 +511,19 @@ export default function claudeRulesBridge(pi: ExtensionApi): void {
 
 	pi.on("before_agent_start", async (event) => {
 		if (rules.length === 0) return;
-		const blocks: string[] = [];
 		const always = buildBlock(selectRules());
-		if (always) blocks.push(always);
-		const hint = buildHintBlock();
-		if (hint) blocks.push(hint);
-		if (blocks.length === 0) return;
-		return { systemPrompt: [...event.systemPrompt, ...blocks] };
+		if (!always) return;
+		return { systemPrompt: [...event.systemPrompt, always] };
 	});
+
+	pi.on("tool_result", (event, ctx) => handleToolResult(event, ctx.cwd));
 
 	pi.registerCommand("claude-rules", {
 		description: "List .claude/rules/ files. Subcommand: reload",
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
 			if (sub === "reload") {
-				await reload(ctx.cwd);
-				ctx.ui.notify(`[claude-rules] reloaded — ${rules.length} rules`, "info");
+				await reload(ctx.cwd, ctx.ui);
 				return;
 			}
 			if (rules.length === 0) {

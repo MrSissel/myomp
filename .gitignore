@@ -16,3 +16,6 @@
 !/agent/extensions/
 !/agent/agents/
 !/agent/commands/
+
+# 依赖目录一律忽略
+node_modules/
