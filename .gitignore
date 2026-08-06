@@ -1,4 +1,5 @@
 # 默认全忽略，白名单放行
+.DS_Store
 /*
 !/.gitignore
 !/README.md

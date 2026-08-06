@@ -106,3 +106,23 @@ providers:
         maxTokens: 262144
         compat:
           requiresReasoningContentForToolCalls: true
+      - id: deepseek-v4-flash-free
+        name: deepseek-v4-flash-free
+        reasoning: true
+        thinking:
+          mode: budget
+          efforts: [low, high, max]
+          defaultLevel: max
+        input: [text]
+        contextWindow: 200000
+        maxTokens: 128000
+        compat:
+          requiresReasoningContentForToolCalls: true
+      - id: mimo-v2.5-free
+        name: mimo-v2.5-free
+        reasoning: true
+        input: [text, image]
+        contextWindow: 200000
+        maxTokens: 32000
+        compat:
+          reasoningContentField: "reasoning"

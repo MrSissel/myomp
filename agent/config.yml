@@ -1,7 +1,7 @@
 setupVersion: 1
 modelRoles: 
-  smol: cch_anthropic/MiniMax-M3:off
-  vision: cch_anthropic/k3
+  smol: cch_anthropic/deepseek-v4-flash:off
+  vision: cch_openai/mimo-v2.5-free
   plan: cch_anthropic/k3
   commit: cch_anthropic/deepseek-v4-flash
   task: cch_anthropic/deepseek-v4-flash:max
@@ -16,7 +16,8 @@ theme:
 retry: 
   fallbackChains: 
     smol: 
-      - cch_anthropic/deepseek-v4-flash
+      - cch_openai/deepseek-v4-flash-free
+      - cch_anthropic/MiniMax-M3
     plan: 
       - cch_anthropic/glm-5.2
     vision: 
