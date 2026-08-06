@@ -1,7 +1,7 @@
 setupVersion: 1
 modelRoles: 
   smol: cch_anthropic/deepseek-v4-flash:off
-  vision: cch_anthropic/k3
+  vision: cch_openai/mimo-v2.5-free
   plan: cch_anthropic/k3
   commit: cch_anthropic/deepseek-v4-flash
   task: cch_anthropic/deepseek-v4-flash:max
@@ -21,6 +21,7 @@ retry:
     plan: 
       - cch_anthropic/glm-5.2
     vision: 
+      - cch_anthropic/k3
       - cch_anthropic/MiniMax-M3
 disabledExtensions: 
   - skill:defuddle
