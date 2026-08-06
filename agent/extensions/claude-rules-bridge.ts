@@ -17,13 +17,17 @@
 //   - alwaysApply              → always inject regardless of cwd/files
 //   - description              → metadata for /claude-rules listing
 //
-// Path matching heuristic — a rule is injected if ANY of:
-//   - alwaysApply: true
-//   - cwd is under any of the rule's globs
-//   - a touched file (tracked via tool_call) matches any glob
+// Injection philosophy (omp-native style: hint the model, don't read for it):
+//   - alwaysApply rules → full content injected into the system prompt each
+//     agent loop (unconditional rules, like omp's sticky RULES.md).
+//   - Path-scoped rules → exposed as the xd://claude_rules tool device
+//     (registerTool with default discoverable loadMode auto-mounts it).
+//     A short hint block tells the model to list/read rules on demand via
+//     read xd://claude_rules / write xd://claude_rules — same posture as
+//     omp's rulebook listing and <dir-context>, zero content injection.
 //
-// Token cap: 12 KB total per provider request (aligned with pi-rules).
-// Zero external deps — hand-rolled frontmatter + glob to avoid yaml/picomatch.
+// Token cap: 12 KB for the alwaysApply block (aligned with pi-rules).
+// Zero external deps — hand-rolled frontmatter to avoid yaml.
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -49,9 +53,12 @@ interface ExtensionContext {
 
 interface ExtensionApi {
 	setLabel(label: string): void;
+	zod: {
+		object: (shape: Record<string, unknown>) => unknown;
+		string: () => { optional: () => unknown };
+	};
 	on(event: "session_start", handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void): void;
-	on(event: "session_switch" | "session_branch" | "session_tree", handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void): void;
-	on(event: "tool_call", handler: (event: { toolName: string; input: unknown }, ctx: ExtensionContext) => void): void;
+	on(event: "session_switch" | "session_branch" | "session_tree" | "session_compact", handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void): void;
 	on(
 		event: "before_agent_start",
 		handler: (
@@ -59,12 +66,32 @@ interface ExtensionApi {
 			ctx: ExtensionContext,
 		) => Promise<{ systemPrompt?: string[] } | void>,
 	): void;
+	registerTool(def: {
+		name: string;
+		label: string;
+		description: string;
+		parameters: unknown;
+		execute(
+			toolCallId: string,
+			params: { name?: string },
+			signal: AbortSignal | undefined,
+			onUpdate: unknown,
+			ctx: ExtensionContext,
+		): Promise<{ content: { type: "text"; text: string }[] }>;
+	}): void;
 	registerCommand(name: string, opts: { description: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> }): void;
 }
 
 // per-process session state (mirrors claude-auto-memory.ts pattern)
 let rules: Rule[] = [];
-let touchedFiles = new Set<string>();
+
+/** Subdirectory CLAUDE.md files (not in .claude/rules/), indexed by their directory scope. */
+interface SubClaudeMd {
+	name: string; // directory relative to cwd, e.g. "packages/api"
+	filePath: string;
+	body: string;
+}
+let subClaudeMds: SubClaudeMd[] = [];
 
 const HOME = homedir();
 
@@ -102,26 +129,6 @@ function parseFrontmatter(yaml: string): Record<string, unknown> {
 		i++;
 	}
 	return out;
-}
-
-/** Glob → RegExp. ** → .*, * → [^/]*. No picomatch dep. */
-function globToRegex(pattern: string): RegExp {
-	const re = "^" + pattern
-		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*\*/g, "\0")
-		.replace(/\*/g, "[^/]*")
-		.replace(/\0/g, ".*")
-		.replace(/\?/g, "[^/]") + "$";
-	return new RegExp(re);
-}
-
-function matchGlob(filePath: string, pattern: string): boolean {
-	const fp = filePath.replace(/^\.\//, "");
-	const pat = pattern.replace(/^\.\//, "");
-	if (globToRegex(pat).test(fp)) return true;
-	const base = basename(fp);
-	const patBase = basename(pat);
-	return patBase !== pat && globToRegex(patBase).test(base);
 }
 
 async function parseRule(filePath: string): Promise<Rule | null> {
@@ -178,6 +185,37 @@ async function discoverRules(cwd: string): Promise<Rule[]> {
 	return out;
 }
 
+/** Recurse cwd subdirectories (check dirs ≤ 3 levels deep, skipping hidden/build dirs) for CLAUDE.md files. */
+async function scanSubdirClaudeMds(cwd: string, out: SubClaudeMd[], depth = 0): Promise<void> {
+	if (depth >= 3) return;
+	let entries: string[];
+	try { entries = await readdir(cwd); } catch { return; }
+	for (const name of entries) {
+		if (name.startsWith(".")) continue; // .git, node_modules (hidden), .claude itself
+		if (SKIP_DIRS.has(name)) continue;
+		const fp = join(cwd, name);
+		let st;
+		try { st = await stat(fp); } catch { continue; }
+		if (!st.isDirectory()) continue;
+		for (const candidate of [join(fp, "CLAUDE.md"), join(fp, ".claude", "CLAUDE.md")]) {
+			try {
+				const raw = await readFile(candidate, "utf8");
+				if (!raw.trim()) continue;
+				out.push({
+					name: fp,
+					filePath: candidate,
+					body: raw.length > MAX_RULE_BYTES ? raw.slice(0, MAX_RULE_BYTES) + "\n\n[...truncated]" : raw,
+				});
+			} catch {
+				// no CLAUDE.md at this candidate
+			}
+		}
+		await scanSubdirClaudeMds(fp, out, depth + 1);
+	}
+}
+
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", ".next", ".nuxt", "coverage", "target", "out"]);
+
 async function probeDirs(cwd: string): Promise<{ scanned: string[]; home: string }> {
 	const scanned: string[] = [];
 	let dir = resolve(cwd);
@@ -192,20 +230,8 @@ async function probeDirs(cwd: string): Promise<{ scanned: string[]; home: string
 }
 
 function selectRules(): Rule[] {
-	const matched: Rule[] = [];
-	for (const r of rules) {
-		if (r.alwaysApply) { matched.push(r); continue; }
-		if (r.globs.length === 0) continue;
-		let hit = false;
-		for (const f of touchedFiles) {
-			for (const g of r.globs) {
-				if (matchGlob(f, g)) { hit = true; break; }
-			}
-			if (hit) break;
-		}
-		if (hit) matched.push(r);
-	}
-	return matched;
+	// only unconditional rules get injected; path-scoped ones are indexed instead
+	return rules.filter(r => r.alwaysApply);
 }
 
 function buildBlock(matched: Rule[]): string {
@@ -221,20 +247,47 @@ function buildBlock(matched: Rule[]): string {
 	}
 	if (blocks.length === 0) return "";
 	return [
-		"## Project Rules (auto-loaded from .claude/rules/)",
+		"## Project Rules (always-applied from .claude/rules/)",
 		"",
-		"Rules below are auto-injected because your current task touches matching paths. Source of truth: `<repo>/.claude/rules/*.md`.",
+		"Rules below are unconditionally in effect. Source of truth: `<repo>/.claude/rules/*.md`.",
 		"",
 		blocks.join("\n\n---\n\n"),
 	].join("\n");
 }
 
-/** Pull file path from omp tool input (canonical field: `path`). */
-function extractPaths(input: unknown): string[] {
-	if (!input || typeof input !== "object") return [];
-	const obj = input as Record<string, unknown>;
-	const v = obj.path;
-	return typeof v === "string" && /[\w./]/.test(v) ? [v] : [];
+/** Path-scoped rules index text (name + globs + file path), served by the xd:// tool. */
+function buildIndexText(): string {
+	const scoped = rules.filter(r => !r.alwaysApply && r.globs.length > 0);
+	const lines: string[] = [];
+	if (scoped.length > 0) {
+		lines.push("## Project Rules Index (.claude/rules/)");
+		lines.push(...scoped.map(r => `- ${r.name} — ${r.globs.join(", ")} — ${r.filePath}`));
+	}
+	if (subClaudeMds.length > 0) {
+		if (lines.length > 0) lines.push("");
+		lines.push("## Subdirectory CLAUDE.md");
+		lines.push("Applies to files under its directory. Read before editing there:");
+		lines.push(...subClaudeMds.map(m => `- ${m.name} — ${m.filePath}`));
+	}
+	if (lines.length === 0) return "No path-scoped rules or subdirectory CLAUDE.md files loaded.";
+	return lines.join("\n");
+}
+
+/** One-line pointer so the model knows path-scoped rules exist and how to read them. */
+function buildHintBlock(): string {
+	const scoped = rules.some(r => !r.alwaysApply && r.globs.length > 0);
+	const sub = subClaudeMds.length > 0;
+	if (!scoped && !sub) return "";
+	const subject = scoped && sub
+		? "Path-scoped rules and subdirectory CLAUDE.md files"
+		: scoped ? "Path-scoped rules" : "Subdirectory CLAUDE.md files";
+	return [
+		"## Project Rules (.claude/rules/)",
+		"",
+		`${subject} are NOT auto-injected. Before editing matching files, read them on demand via the claude_rules device:`,
+		"  read xd://claude_rules               → index (name + scope + file path)",
+		'  write xd://claude_rules {"name": X}  → full content',
+	].join("\n");
 }
 
 let lastError: string | undefined;
@@ -243,33 +296,57 @@ export default function claudeRulesBridge(pi: ExtensionApi): void {
 	const reload = async (cwd: string): Promise<void> => {
 		try {
 			rules = await discoverRules(cwd);
-			touchedFiles.clear();
+			const sub: SubClaudeMd[] = [];
+			await scanSubdirClaudeMds(cwd, sub);
+			subClaudeMds = sub;
 			lastError = undefined;
 		} catch (e) {
 			rules = [];
+			subClaudeMds = [];
 			lastError = (e as Error).message ?? String(e);
 		}
 	};
 
 	pi.on("session_start", async (_e, ctx) => { await reload(ctx.cwd); });
-	for (const evt of ["session_switch", "session_branch", "session_tree"] as const) {
+	for (const evt of ["session_switch", "session_branch", "session_tree", "session_compact"] as const) {
 		pi.on(evt, async (_e, ctx) => { await reload(ctx.cwd); });
 	}
 
-	pi.on("tool_call", event => {
-		for (const p of extractPaths(event.input)) {
-			const cleaned = p.replace(/^\.\//, "").trim();
-			if (cleaned) touchedFiles.add(cleaned);
-		}
+	pi.registerTool({
+		name: "claude_rules",
+		label: "Claude Rules",
+		description:
+			"List path-scoped .claude/rules rules and subdirectory CLAUDE.md files (no args) " +
+			"or read one entry's full content (args: name). Use before editing files that may " +
+			"match a rule's globs or fall under a subdirectory CLAUDE.md.",
+		parameters: pi.zod.object({ name: pi.zod.string().optional() }),
+		async execute(_toolCallId, params) {
+			const name = params?.name?.trim();
+			if (!name) {
+				return { content: [{ type: "text", text: buildIndexText() }] };
+			}
+			const rule = rules.find(r => r.name === name);
+			if (rule) {
+				return { content: [{ type: "text", text: `<!-- claude-rules: ${rule.filePath} -->\n${rule.body}` }] };
+			}
+			const sub = subClaudeMds.find(m => m.name === name);
+			if (sub) {
+				return { content: [{ type: "text", text: `<!-- claude-md: ${sub.filePath} -->\n${sub.body}` }] };
+			}
+			const available = [...rules.map(r => r.name), ...subClaudeMds.map(m => m.name)].join(", ") || "none";
+			return { content: [{ type: "text", text: `Unknown rule: ${name}\nAvailable: ${available}` }] };
+		},
 	});
 
 	pi.on("before_agent_start", async (event) => {
 		if (rules.length === 0) return;
-		const matched = selectRules();
-		if (matched.length === 0) return;
-		const block = buildBlock(matched);
-		if (!block) return;
-		return { systemPrompt: [...event.systemPrompt, block] };
+		const blocks: string[] = [];
+		const always = buildBlock(selectRules());
+		if (always) blocks.push(always);
+		const hint = buildHintBlock();
+		if (hint) blocks.push(hint);
+		if (blocks.length === 0) return;
+		return { systemPrompt: [...event.systemPrompt, ...blocks] };
 	});
 
 	pi.registerCommand("claude-rules", {
@@ -286,14 +363,17 @@ export default function claudeRulesBridge(pi: ExtensionApi): void {
 				ctx.ui.notify(`[claude-rules] no rules loaded\ncwd: ${ctx.cwd}\nscanned: ${probe.scanned.join(", ") || "(none)"}\nhome: ${probe.home}\n${lastError ? `error: ${lastError}` : "no .claude/rules/ in cwd walk-up or ~/.claude/rules/"}`, "info");
 				return;
 			}
-			const lines = rules.map(r => {
-				const flags = [
-					r.alwaysApply ? "alwaysApply" : null,
-					r.globs.length ? `globs=[${r.globs.join(",")}]` : null,
-				].filter(Boolean).join(" ");
-				return `- ${r.name}  ${flags}\n  ${r.filePath}`;
-			});
-			ctx.ui.notify(`[claude-rules] ${rules.length} rules:\n${lines.join("\n")}`, "info");
+			const lines = [
+				...rules.map(r => {
+					const flags = [
+						r.alwaysApply ? "alwaysApply" : null,
+						r.globs.length ? `globs=[${r.globs.join(",")}]` : null,
+					].filter(Boolean).join(" ");
+					return `- ${r.name}  ${flags}\n  ${r.filePath}`;
+				}),
+				...subClaudeMds.map(m => `- ${m.name} (CLAUDE.md)\n  ${m.filePath}`),
+			];
+			ctx.ui.notify(`[claude-rules] ${rules.length} rules, ${subClaudeMds.length} subdir CLAUDE.md:\n${lines.join("\n")}`, "info");
 		},
 	});
 }

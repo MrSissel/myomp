@@ -129,7 +129,7 @@ const instructionsModule: PonytailInstructions = ponytailRoot
     }
 
 const { DEFAULT_MODE, getDefaultMode, normalizeMode, normalizeConfigMode,
-        normalizePersistedMode, writeDefaultMode } = configModule
+        normalizePersistedMode, isDeactivationCommand, writeDefaultMode } = configModule
 const { getPonytailInstructions } = instructionsModule
 
 
@@ -240,8 +240,8 @@ export default function ponytailExtension(pi: PiHost) {
     ctx?.ui?.notify?.(`Ponytail mode set to ${normalized}.`, 'info')
   }
 
-  pi.registerCommand('ponytail', {
-    description: 'Set or report Ponytail mode',
+  pi.registerCommand("ponytail", {
+    description: "Set or report Ponytail mode",
     handler: async (args, ctx) => {
       const parsed = parsePonytailCommand(args || '', configuredDefaultMode)
       if (parsed.type === 'status') {
@@ -270,14 +270,40 @@ export default function ponytailExtension(pi: PiHost) {
     },
   })
 
-  pi.on('session_start', (_rawEvent, rawCtx) => {
+  // Deactivation by plain prompt ("stop ponytail" / "normal mode"), same as
+  // the upstream pi-extension; extension-sourced inputs are ignored.
+  pi.on('input', async (event: unknown) => {
+    const e = event as { source?: string; text?: string } | undefined
+    if (e?.source === 'extension') return
+    if (currentMode !== 'off' && isDeactivationCommand(String(e?.text || ''))) {
+      setMode('off', null)
+    }
+  })
+
+  // Re-resolve the persisted mode whenever the active session changes
+  // (switch/branch/tree), not just at session_start — each session stores
+  // its own ponytail-mode entry.
+  function adoptSession(rawCtx: unknown): void {
     const ctx = rawCtx as PiContext | undefined
     const entries = ctx?.sessionManager?.getBranch?.() || ctx?.sessionManager?.getEntries?.() || []
     configuredDefaultMode = getDefaultMode()
     currentMode = resolveSessionMode(entries, configuredDefaultMode)
     syncStatus(ctx ?? null)
+  }
+
+  pi.on('session_start', (_rawEvent, rawCtx) => {
+    adoptSession(rawCtx)
+    const ctx = rawCtx as PiContext | undefined
     ctx?.ui?.notify?.(`Ponytail loaded: ${currentMode}`, 'info')
   })
+
+  for (const evt of ['session_switch', 'session_branch', 'session_tree']) {
+    pi.on(evt, (_rawEvent, rawCtx) => {
+      adoptSession(rawCtx)
+      const ctx = rawCtx as PiContext | undefined
+      ctx?.ui?.notify?.(`Ponytail mode: ${currentMode}`, 'info')
+    })
+  }
 
   pi.on('agent_start', (_rawEvent, rawCtx) => {
     isActive = true
