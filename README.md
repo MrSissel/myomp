@@ -25,12 +25,25 @@ install.sh          # 新机一键引导脚本（幂等）
 
 ```zsh
 git clone <本仓库> ~/.omp
-~/.omp/install.sh          # 注入别名 + 生成 .env 模板
+~/.omp/install.sh          # 注入别名 + 生成 .env 模板 + 安装 marketplace 插件
 # 编辑 ~/.omp/agent/.env，填入真实 CCH_API_KEY
 source ~/.zshrc            # 或重开终端
 ```
 
-`install.sh` 幂等，可重复执行：不会重复追加别名，不会覆盖已有 `.env`。
+`install.sh` 幂等，可重复执行：不会重复追加别名，不会覆盖已有 `.env`，插件安装对已装版本是 no-op。
+
+## 插件（marketplace 安装，不入库）
+
+ponytail / claude-auto-memory / claude-rules-bridge 来自 leader 仓库 cnzgray/omp-extensions，由 `install.sh` 第 3 步自动安装。插件本体存于 `~/.omp/plugins/{cache,node_modules}`，git 不入库且换机不备份——克隆到新机后跑一次 `install.sh` 即自动装好。
+
+升级：leader 更新仓库后，任一台机器执行
+
+```zsh
+omp plugin upgrade ponytail@omp-extensions claude-auto-memory@omp-extensions claude-rules-bridge@omp-extensions
+# 或全量：omp plugin upgrade
+```
+
+然后重启 omp 会话生效。
 
 ## 别名
 
@@ -48,6 +61,7 @@ overlay 机制：`--config` 指定的文件与全局 `config.yml` 深合并，�
 
 - `agent/.env` — API key，新机由 install.sh 从模板生成后手动填值
 - `agent/*.db*`、`sessions/`、`blobs/`、`terminal-sessions/` — 本机运行状态与会话历史，换机不带过去
+- `plugins/`（含 `cache/`、`node_modules/`、`installed_plugins.json`、`omp-plugins.lock.json`）、`marketplaces.json` — marketplace 插件缓存、注册表与本机状态；`marketplaces.json` 含本机绝对路径（`catalogPath`），不入库，由 install.sh 的 `marketplace add` 重建
 
 ## 维护约定
 
