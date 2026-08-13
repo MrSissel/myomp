@@ -17,6 +17,7 @@ tiers/
   config-glm.yml    # overlay：default 角色切到 GLM 5.2
   config-kimi-256.yml # overlay：default 角色切到 Kimi K3 256K（小上下文档）
   config-deepseek-flash.yml # overlay：default 角色切到 DeepSeek V4 Flash（轻量档）
+  config-deepseek-pro.yml   # overlay：default 角色切到 DeepSeek V4 Pro（主力档）
   aliases.zsh       # shell 别名（source 式，由 install.sh 注入）
 install.sh          # 新机一键引导脚本（幂等）
 ```
@@ -53,6 +54,7 @@ omp plugin upgrade ponytail@omp-extensions claude-auto-memory@omp-extensions cla
 | `omp-glm` | 主模型 GLM 5.2 |
 | `omp-klite` | 主模型 Kimi K3 256K（小上下文档，对应 config-kimi-256.yml） |
 | `omp-dsf` | 主模型 DeepSeek V4 Flash（轻量档，对应 config-deepseek-flash.yml） |
+| `omp-dsp` | 主模型 DeepSeek V4 Pro（主力档，对应 config-deepseek-pro.yml） |
 | `omp-ask` | 轻量问答走 smol 角色（MiniMax-M3） |
 
 overlay 机制：`--config` 指定的文件与全局 `config.yml` 深合并，只覆盖声明的字段，不整文件替换。
