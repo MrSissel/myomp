@@ -6,6 +6,9 @@ modelRoles:
   commit: cch_anthropic/deepseek-v4-flash
   task: cch_anthropic/deepseek-v4-flash:max
   default: cch_anthropic/glm-5.2
+task: 
+  agentModelOverrides: 
+    reviewer: "@task"
 defaultThinkingLevel: auto
 providers: 
   {}
