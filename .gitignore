@@ -16,6 +16,7 @@
 !/agent/extensions/
 !/agent/agents/
 !/agent/commands/
+!/agent/skills/
 
 # 依赖目录一律忽略
 node_modules/
