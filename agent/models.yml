@@ -86,7 +86,7 @@ providers:
         name: k3
         reasoning: true
         thinking:
-          mode: budget
+          mode: effort
           efforts: [low, high, max]
           defaultLevel: max
         input: [text, image]
@@ -98,7 +98,7 @@ providers:
         name: k3-256k
         reasoning: true
         thinking:
-          mode: budget
+          mode: effort
           efforts: [low, high, max]
           defaultLevel: max
         input: [text, image]
@@ -110,7 +110,7 @@ providers:
         name: deepseek-v4-flash-free
         reasoning: true
         thinking:
-          mode: budget
+          mode: effort
           efforts: [low, high, max]
           defaultLevel: max
         input: [text]
