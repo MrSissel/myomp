@@ -106,6 +106,18 @@ providers:
         maxTokens: 262144
         compat:
           requiresReasoningContentForToolCalls: true
+      - id: deepseek-v4-flash
+        name: deepseek-v4-flash
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [low, high, max]
+          defaultLevel: max
+        input: [text]
+        contextWindow: 1048576
+        maxTokens: 384000
+        compat:
+          requiresReasoningContentForToolCalls: true
       - id: deepseek-v4-flash-free
         name: deepseek-v4-flash-free
         reasoning: true

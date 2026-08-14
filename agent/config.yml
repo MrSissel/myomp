@@ -4,7 +4,7 @@ modelRoles:
   vision: cch_openai/mimo-v2.5-free
   plan: cch_anthropic/k3
   commit: cch_anthropic/deepseek-v4-flash
-  task: cch_anthropic/deepseek-v4-flash:max
+  task: cch_openai/deepseek-v4-flash:max
   default: cch_anthropic/glm-5.2
 task: 
   agentModelOverrides: 
