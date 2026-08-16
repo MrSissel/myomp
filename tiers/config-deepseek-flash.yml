@@ -1,3 +1,4 @@
 # DeepSeek V4 Flash tier overlay - 与全局 config.yml 深合并，仅覆盖 default 模型角色
+# 走 openai-responses 协议（原 dsfo 通道并入）
 modelRoles:
-  default: cch_anthropic/deepseek-v4-flash
+  default: cch_responses/deepseek-v4-flash
