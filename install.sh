@@ -23,12 +23,14 @@ else
 fi
 
 # 3. marketplace 插件：从 cnzgray/omp-extensions 安装（幂等，已装则跳过）
-#    marketplaces.json 含本机绝对路径，不入库；add 在每台新机重建注册
+#    marketplaces.json / installed_plugins.json / omp-plugins.lock.json 已入库备份；
+#    但 installPath 是绝对路径，每台新机仍需重新 install 拉缓存
 echo "[插件] 同步 omp-extensions marketplace..."
 omp plugin marketplace add cnzgray/omp-extensions || echo "[警告] marketplace add 失败"
 omp plugin install --force \
   ponytail@omp-extensions \
   claude-auto-memory@omp-extensions \
-  claude-rules-bridge@omp-extensions || echo "[警告] 插件安装失败，请手动 omp plugin install"
+  claude-rules-bridge@omp-extensions \
+  deepseek-v4-anchor@omp-extensions || echo "[警告] 插件安装失败，请手动 omp plugin install"
 
 echo "完成。执行 source $ZSHRC 或重开终端使别名生效。"
