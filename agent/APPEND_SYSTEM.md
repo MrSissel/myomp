@@ -12,3 +12,13 @@
 
 - When a question concerns omp itself (configuration, agents, MCP, skills, extensions, tools, keybindings), ALWAYS consult the bundled docs first: `read omp://` lists all available docs; read the relevant `omp://<doc>` before answering.
 - NEVER answer omp questions from memory or from other harnesses' conventions (Claude Code, Cursor, etc.) — verify against the omp docs.
+---
+
+# Git Hard Rules (global)
+
+- Never run `git commit`, `git push`, `git pull`, or `git reset --hard` on your own initiative.
+- To propose a commit: show the file list + the full commit message, then stop and wait.
+- The ONLY trigger to execute a commit is an explicit commit directive from the user ("提交", "提交吧", "commit"). Vague replies ("可以", "行", "好的", "ok", "嗯") never authorize a commit — keep waiting for an explicit directive.
+- `push` / `pull` follow the same rule: execute only when the user explicitly requests that exact operation ("推上去", "push", "pull 一下").
+- Approving a plan is NOT approving a commit. "改完了" (done) and "验证过了" (verified) are not commit instructions.
+- Sole exception: a one-time full authorization from the user (e.g. "直接提交并推送") covers that single authorized scope; no further confirmation needed within it.
