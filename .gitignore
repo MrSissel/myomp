@@ -14,6 +14,8 @@
 !/agent/.env.example
 !/agent/mcp.json
 !/agent/extensions/
+# Orca 托管生成的扩展，勿提交（每次 Orca 更新都会重写）
+/agent/extensions/orca-*.ts
 !/agent/agents/
 !/agent/commands/
 !/agent/skills/
