@@ -138,3 +138,25 @@ providers:
         maxTokens: 32000
         compat:
           reasoningContentField: "reasoning"
+  # deepseek-v4-anchor 插件要求 OpenAI Responses 协议；cch_anthropic/cch_openai
+  # 分别走 anthropic-messages / openai-completions，均不触发锚定。
+  # 此 provider 与 cch_responses 同名模型共用代理的 /v1/responses 路由。
+  cch_responses:
+    baseUrl: http://localhost:23000/v1
+    api: openai-responses
+    apiKey: CCH_API_KEY
+    authHeader: true
+    disableStrictTools: true
+    models:
+      - id: deepseek-v4-pro
+        name: deepseek-v4-pro
+        reasoning: true
+        thinking:
+          mode: budget
+          efforts: [high, max]
+          defaultLevel: max
+        input: [text]
+        contextWindow: 1048576
+        maxTokens: 384000
+        compat:
+          requiresReasoningContentForToolCalls: true
