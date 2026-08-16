@@ -19,6 +19,6 @@
 - Never run `git commit`, `git push`, `git pull`, or `git reset --hard` on your own initiative.
 - To propose a commit: show the file list + the full commit message, then stop and wait.
 - The ONLY trigger to execute a commit is an explicit commit directive from the user ("提交", "提交吧", "commit"). Vague replies ("可以", "行", "好的", "ok", "嗯") never authorize a commit — keep waiting for an explicit directive.
-- `push` / `pull` follow the same rule: execute only when the user explicitly requests that exact operation ("推上去", "push", "pull 一下").
+- `push` / `pull` are NEVER executed by default: only an explicit, emphatic request for that exact operation authorizes it (e.g. "推上去", "push", "务必 push", "现在就 pull"). Ambiguous or passing mentions ("记得 push", "回头推一下", "push / pull follow the same rule" style references) do NOT count — keep waiting for an explicit directive.
 - Approving a plan is NOT approving a commit. "改完了" (done) and "验证过了" (verified) are not commit instructions.
 - Sole exception: a one-time full authorization from the user (e.g. "直接提交并推送") covers that single authorized scope; no further confirmation needed within it.
