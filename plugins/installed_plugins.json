@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "plugins": {
+    "ponytail@omp-extensions": [
+      {
+        "scope": "user",
+        "installPath": "/Users/tonywu/.omp/plugins/cache/plugins/omp-extensions___ponytail___1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-08-16T09:45:15.993Z",
+        "lastUpdated": "2026-08-16T09:45:15.993Z"
+      }
+    ],
+    "claude-rules-bridge@omp-extensions": [
+      {
+        "scope": "user",
+        "installPath": "/Users/tonywu/.omp/plugins/cache/plugins/omp-extensions___claude-rules-bridge___1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-08-16T09:45:16.349Z",
+        "lastUpdated": "2026-08-16T09:45:16.349Z"
+      }
+    ],
+    "claude-auto-memory@omp-extensions": [
+      {
+        "scope": "user",
+        "installPath": "/Users/tonywu/.omp/plugins/cache/plugins/omp-extensions___claude-auto-memory___1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-08-16T09:45:16.725Z",
+        "lastUpdated": "2026-08-16T09:45:16.725Z"
+      }
+    ],
+    "deepseek-v4-anchor@omp-extensions": [
+      {
+        "scope": "user",
+        "installPath": "/Users/tonywu/.omp/plugins/cache/plugins/omp-extensions___deepseek-v4-anchor___1.1.0",
+        "version": "1.1.0",
+        "installedAt": "2026-08-16T09:45:59.147Z",
+        "lastUpdated": "2026-08-16T09:45:59.147Z"
+      }
+    ]
+  }
+}

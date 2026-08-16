@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "marketplaces": [
+    {
+      "name": "omp-extensions",
+      "sourceType": "github",
+      "sourceUri": "cnzgray/omp-extensions",
+      "catalogPath": "/Users/tonywu/.omp/plugins/cache/marketplaces/omp-extensions/marketplace.json",
+      "addedAt": "2026-08-07T01:20:41.890Z",
+      "updatedAt": "2026-08-16T09:40:51.549Z"
+    }
+  ]
+}

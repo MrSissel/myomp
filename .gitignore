@@ -22,3 +22,10 @@
 
 # 依赖目录一律忽略
 node_modules/
+
+# 插件还原要素(换机恢复用):市场源 + 已装清单 + 启用状态
+!/marketplaces.json
+!/plugins/
+/plugins/*
+!/plugins/installed_plugins.json
+!/plugins/omp-plugins.lock.json
