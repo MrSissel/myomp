@@ -1,3 +1,4 @@
 # DeepSeek V4 Pro tier overlay — 与全局 config.yml 深合并，仅覆盖 default 模型角色
+# 走 openai-responses 协议（deepseek-v4-anchor 锚定插件的协议要求）
 modelRoles:
-  default: cch_anthropic/deepseek-v4-pro
+  default: cch_responses/deepseek-v4-pro
