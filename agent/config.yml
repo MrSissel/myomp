@@ -1,4 +1,4 @@
-setupVersion: 1
+setupVersion: 2
 modelRoles: 
   smol: cch_responses/deepseek-v4-flash:off
   vision: cch_openai/mimo-v2.5-free
@@ -42,3 +42,5 @@ interruptMode: immediate
 hideThinkingBlock: true
 browser: 
   cdpUrl: http://127.0.0.1:60756
+composer: 
+  shape: claude
