@@ -18,6 +18,18 @@ providers:
         maxTokens: 128000
         compat:
           requiresReasoningContentForToolCalls: true
+      - id: glm-5.3-flash
+        name: glm-5.3-flash
+        reasoning: true
+        thinking:
+          mode: budget
+          efforts: [low, high, max]
+          defaultLevel: max
+        input: [text, image]
+        contextWindow: 1000000
+        maxTokens: 128000
+        compat:
+          requiresReasoningContentForToolCalls: true
       - id: k3
         name: k3
         reasoning: true

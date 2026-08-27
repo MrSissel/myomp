@@ -3,6 +3,7 @@
 
 alias omp-kimi 'omp --config ~/.omp/tiers/config-kimi.yml'
 alias omp-glm 'omp --config ~/.omp/tiers/config-glm.yml'
+alias omp-glmf 'omp --config ~/.omp/tiers/config-glm-flash.yml'
 alias omp-klite 'omp --config ~/.omp/tiers/config-kimi-256.yml'
 alias omp-dsf 'omp --config ~/.omp/tiers/config-deepseek-flash.yml'
 alias omp-dsp 'omp --config ~/.omp/tiers/config-deepseek-pro.yml'
