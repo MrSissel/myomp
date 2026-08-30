@@ -11,7 +11,9 @@ task:
     reviewer: "@task"
 defaultThinkingLevel: auto
 providers:
-  {}
+  webSearchOrder:
+    - tavily
+    - exa
 symbolPreset: nerd
 theme:
   dark: titanium
@@ -46,3 +48,5 @@ composer:
   shape: claude
 statusLine:
   compactThinkingLevel: false
+vault:
+  enabled: true
