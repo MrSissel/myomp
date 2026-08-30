@@ -1,38 +1,38 @@
 setupVersion: 2
-modelRoles: 
+modelRoles:
+  default: cch_responses/deepseek-v4-flash
   smol: cch_responses/deepseek-v4-flash:off
   vision: cch_openai/mimo-v2.5-free
   plan: cch_anthropic/k3
   commit: cch_responses/deepseek-v4-flash
   task: cch_responses/deepseek-v4-flash:max
-  default: cch_anthropic/glm-5.2
-task: 
-  agentModelOverrides: 
+task:
+  agentModelOverrides:
     reviewer: "@task"
 defaultThinkingLevel: auto
-providers: 
+providers:
   {}
 symbolPreset: nerd
-theme: 
+theme:
   dark: titanium
   light: light
-retry: 
-  fallbackChains: 
-    smol: 
+retry:
+  fallbackChains:
+    smol:
       - cch_openai/deepseek-v4-flash-free
       - cch_anthropic/MiniMax-M3
-    plan: 
+    plan:
       - cch_anthropic/glm-5.2
-    vision: 
+    vision:
       - cch_anthropic/k3
       - cch_anthropic/MiniMax-M3
-disabledExtensions: 
+disabledExtensions:
   - skill:defuddle
   - skill:json-canvas
   - skill:obsidian-bases
   - skill:obsidian-cli
   - skill:obsidian-markdown
-disabledProviders: 
+disabledProviders:
   - codex
   - gemini
   - opencode
@@ -40,7 +40,9 @@ disabledProviders:
 steeringMode: one-at-a-time
 interruptMode: immediate
 hideThinkingBlock: true
-browser: 
+browser:
   cdpUrl: http://127.0.0.1:60756
-composer: 
+composer:
   shape: claude
+statusLine:
+  compactThinkingLevel: false
