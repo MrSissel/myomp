@@ -22,3 +22,8 @@
 - `push` / `pull` are NEVER executed by default: only an explicit, emphatic request for that exact operation authorizes it (e.g. "推上去", "push", "务必 push", "现在就 pull"). Ambiguous or passing mentions ("记得 push", "回头推一下", "push / pull follow the same rule" style references) do NOT count — keep waiting for an explicit directive.
 - Approving a plan is NOT approving a commit. "改完了" (done) and "验证过了" (verified) are not commit instructions.
 - Sole exception: a one-time full authorization from the user (e.g. "直接提交并推送") covers that single authorized scope; no further confirmation needed within it.
+# Browser tasks
+
+- UI verification, web interaction, form filling, or scraping → drive the Orca embedded browser via the `orca` CLI (`tab create`, `snapshot`, `click`, `fill`, `eval`, `wait`). Full command reference: load the orca-cli skill (`orca skills get orca-cli` prints the version-matched guide). The browser is visible in Orca, keeps persistent login state (user logs in manually once; reuse that session, never ask for credentials), and snapshots are text — never judge a page from a screenshot unless the active model has vision.
+- Static pages → `read` the URL directly; no browser needed.
+- Never fall back to a headless browser for these tasks.
