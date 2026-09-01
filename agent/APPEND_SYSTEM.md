@@ -25,5 +25,6 @@
 # Browser tasks
 
 - UI verification, web interaction, form filling, or scraping → drive the Orca embedded browser via the `orca` CLI (`tab create`, `snapshot`, `click`, `fill`, `eval`, `wait`). Full command reference: load the orca-cli skill (`orca skills get orca-cli` prints the version-matched guide). The browser is visible in Orca, keeps persistent login state (user logs in manually once; reuse that session, never ask for credentials), and snapshots are text — never judge a page from a screenshot unless the active model has vision.
+- Confirm with the user before starting any browser automation, unless the user already explicitly asked for it.
 - Static pages → `read` the URL directly; no browser needed.
 - Never fall back to a headless browser for these tasks.
