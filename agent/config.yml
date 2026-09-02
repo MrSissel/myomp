@@ -50,3 +50,4 @@ statusLine:
   compactThinkingLevel: false
 vault:
   enabled: true
+doubleEscapeAction: tree
